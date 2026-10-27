@@ -1,0 +1,95 @@
+[build-system]
+requires = [
+    "hatchling==1.32.4",
+    "hatch-rs==0.4.2",
+    "packaging==26.3",
+    "uv-dynamic-versioning==0.14.1",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "vsgraph"
+description = "VapourSynth filter graph inspection"
+readme = "README.md"
+authors = [{ name = "Vardë", email = "ichunjo.le.terrible@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = ["vapoursynth>=79"]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    "hatchling==1.32.4",
+    "packaging>=26.3",
+    "pytest>=9.1.1",
+    "ruff==0.17.3",
+    "ty==0.0.92",
+    "vsjetengine>=2.0.0",
+    "vsstubs>=3.0.1",
+]
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "*.toml", "uv.lock", "Cargo.lock"]
+
+[tool.hatch.build.targets.wheel]
+include = ["vapoursynth/plugins/graph"]
+artifacts = [
+    "vapoursynth/plugins/graph/*.dylib",
+    "vapoursynth/plugins/graph/*.so",
+    "vapoursynth/plugins/graph/*.dll",
+    "vapoursynth/plugins/graph/manifest.vs",
+]
+force-include = { "src/python/vsgraph" = "vsgraph" }
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.pytest]
+testpaths = ["tests"]
+# Enable vs.CoreCreationFlags.ENABLE_GRAPH_INSPECTION
+addopts = ["--vpy-flags", "1"]
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { git = { commit = true, tags = true } },
+]
+
+[tool.ruff]
+line-length = 120
+lint.preview = true
+format.preview = true
+
+[tool.ty]
+src.exclude = ["stubs"]
+environment.extra-paths = ["stubs", "src/python"]
+rules.dynamic-function-decorator-return = "error"
+rules.missing-type-argument = "error"
+rules.possibly-unresolved-reference = "warn"
+rules.unsound-return-statement = "error"
+rules.missing-override-decorator = "error"
+
+[tool.cibuildwheel]
+build-frontend = "build[uv]"
+build = "cp312-*"
+skip = ["*-win32", "*-manylinux_i686", "*musllinux*"]
+
+[tool.cibuildwheel.linux]
+archs = ["native"]
+before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
+environment.PATH = "$HOME/.cargo/bin:$PATH"
+repair-wheel-command = "auditwheel repair --strip -w {dest_dir} {wheel}"
+# Matches minimum supported by VapourSynth
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-all = "rustup target add x86_64-pc-windows-msvc"
+
+[tool.cibuildwheel.macos]
+archs = ["native"]
+# Matches minimum supported by VapourSynth
+environment.MACOSX_DEPLOYMENT_TARGET = "13.0"

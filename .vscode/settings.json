@@ -1,0 +1,16 @@
+{
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "explicit"
+    },
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+  "editor.formatOnSave": true,
+  "python.languageServer": "None",
+  "python.terminal.useEnvFile": true,
+  "python.testing.pytestArgs": ["."],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "ty.inlayHints.callArgumentNames": false,
+  "ty.inlayHints.variableTypes": false
+}

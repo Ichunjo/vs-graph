@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "rust-lang.rust-analyzer",
+    "astral-sh.ty",
+    "vd-varde.vsstubs",
+    "tamasfe.even-better-toml"
+  ]
+}

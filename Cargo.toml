@@ -1,0 +1,39 @@
+[package]
+name = "graph"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/rust/lib.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
+
+[dependencies]
+envparse = "0.1.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+vapoursynth4-rs = { version = "0.5.1", features = ["vs-graph"] }
+
+[lints.rust]
+improper_ctypes = "warn"
+improper_ctypes_definitions = "warn"
+non_ascii_idents = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+single_use_lifetimes = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = [] }
+unnameable_types = "warn"
+unreachable_pub = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+
+too_many_arguments = { level = "allow", priority = 1 }
+cast_ptr_alignment = { level = "allow", priority = 1 }
