@@ -244,3 +244,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# VS Stubs
+stubs/
