@@ -5,11 +5,12 @@ from vsgraph import get_graph
 
 import vapoursynth as vs
 
+core = vs.core
 pytestmark = pytest.mark.vpy
 
 
 def test_single_video_node(blank_video: vs.VideoNode) -> None:
-    graph = get_graph(blank_video)
+    graph = get_graph(blank_video, pretty=True)
 
     assert graph.root_id == graph.root.id
     assert len(graph) == 1
@@ -27,6 +28,13 @@ def test_single_video_node(blank_video: vs.VideoNode) -> None:
     assert vinfo.fps == Fraction(24, 1)
     assert vinfo.num_frames == 100
     assert vinfo.type == "video"
+
+    assert len(root.call_stack) >= 1
+    frame = root.call_stack[0]
+    assert frame.plugin_ns == "std"
+    assert frame.function == "BlankClip"
+    assert frame.level >= 0
+    assert frame.frame_id.startswith("frame_")
 
 
 def test_linear_video_pipeline(video_pipeline: vs.VideoNode) -> None:
@@ -89,20 +97,46 @@ def test_branching_video_dag(diamond_video_dag: vs.VideoNode) -> None:
     assert "Invert" in dependent_names
 
 
-def test_video_call_stack(blank_video: vs.VideoNode) -> None:
-    graph = get_graph(blank_video)
-    node = graph.root
+def test_single_audio_node(blank_audio: vs.AudioNode) -> None:
+    graph = get_graph(blank_audio)
 
-    assert len(node.call_stack) >= 1
-    frame = node.call_stack[0]
-    assert frame.plugin_ns == "std"
-    assert frame.function == "BlankClip"
-    assert frame.level >= 0
-    assert frame.frame_id.startswith("frame_")
-
-
-@pytest.mark.parametrize("pretty", [True, False])
-def test_video_graph_pretty_param(blank_video: vs.VideoNode, pretty: bool) -> None:
-    graph = get_graph(blank_video, pretty=pretty)
-    assert graph.root.name == "BlankClip"
+    assert graph.root_id == graph.root.id
     assert len(graph) == 1
+    assert len(graph.edges) == 0
+
+    root = graph.root
+    assert root.name == "BlankAudio"
+
+    ainfo = root.media_info
+    assert ainfo.sample_rate == 44100
+    assert ainfo.bits_per_sample == 16
+    assert ainfo.num_channels == 2
+    assert ainfo.num_samples == 44100
+    assert ainfo.type == "audio"
+
+    assert len(root.call_stack) >= 1
+    frame = root.call_stack[0]
+    assert frame.plugin_ns == "std"
+    assert frame.function == "BlankAudio"
+    assert frame.level >= 0
+
+
+def test_audio_pipeline(blank_audio: vs.AudioNode) -> None:
+    spliced = core.std.AudioSplice([blank_audio, blank_audio])
+    graph = get_graph(spliced)
+
+    assert graph.root.name == "AudioSplice"
+    root_ainfo = graph.root.media_info
+    assert root_ainfo is not None
+    assert root_ainfo.num_samples == 88200
+
+    # AudioSplice has 2 inputs from BlankAudio
+    deps = graph.get_dependencies(graph.root)
+    assert len(deps) == 2
+    assert {n.name for n in deps} == {"BlankAudio"}
+    assert deps[0].id == deps[1].id
+
+    incoming = graph.get_incoming_edges(graph.root)
+    assert len(incoming) == 2
+    assert all(e.from_ == deps[0].id for e in incoming)
+
