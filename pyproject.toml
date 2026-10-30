@@ -22,7 +22,7 @@ dev = [
     "packaging>=26.3",
     "pytest>=9.1.1",
     "ruff==0.17.3",
-    "ty==0.0.92",
+    "ty==0.0.94",
     "vsjetengine>=2.0.0",
     "vsstubs>=3.0.1",
 ]
