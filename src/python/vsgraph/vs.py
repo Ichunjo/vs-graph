@@ -41,6 +41,13 @@ class AudioFormat:
     def id(self) -> int:
         return int(self)
 
+    @property
+    def name(self) -> str:
+        return (
+            f"Audio{self.bits_per_sample}{'F' if self.sample_type is vs.SampleType.FLOAT else ''} "
+            f"({self.num_channels} CH)"
+        )
+
     @classmethod
     def from_id(cls, id: int) -> Self:
         sample_type = vs.SampleType((id >> 60) & 0xF)
@@ -61,6 +68,7 @@ class AudioFormat:
     def _as_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "name": self.name,
             "sample_type": self.sample_type,
             "bits_per_sample": self.bits_per_sample,
             "bytes_per_sample": self.bytes_per_sample,

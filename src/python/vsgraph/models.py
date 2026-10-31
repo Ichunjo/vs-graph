@@ -16,6 +16,10 @@ type NodeKey = vs.RawNode | Node[Any] | NodeRef | str
 
 @dataclass(slots=True, kw_only=True)
 class MediaInfo(ABC):
+    @property
+    @abstractmethod
+    def format(self) -> vs.VideoFormat | AudioFormat: ...
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
         data = dict[str, Any]()
@@ -24,6 +28,8 @@ class MediaInfo(ABC):
             attr = getattr(self, dfield.name)
             if dfield.name != "gpu_resident" or attr is not None:
                 data[dfield.name] = attr
+
+        data["format"] = self.format._as_dict()
 
         return data
 
@@ -51,9 +57,16 @@ class VideoMediaInfo(MediaInfo):
         return Fraction(self.fps_num, self.fps_den) if self.fps_den != 0 else Fraction(0, 1)
 
     @property
+    @override
     def format(self) -> vs.VideoFormat:
         """The resolved VideoFormat from the core."""
         return vs.core.get_video_format(self.format_id)
+
+    @override
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["format"] = self.format._as_dict()
+        return data
 
     @classmethod
     @override
@@ -82,9 +95,16 @@ class AudioMediaInfo(MediaInfo):
     type: Literal["anode"] = "anode"
 
     @property
+    @override
     def format(self) -> AudioFormat:
         """The resolved AudioFormat."""
         return AudioFormat.from_id(self.format_id)
+
+    @override
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["format"] = self.format._as_dict()
+        return data
 
     @classmethod
     @override
