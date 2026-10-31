@@ -9,16 +9,23 @@ from typing import Any, Literal, Self, override
 
 import vapoursynth as vs
 
-from .enum import RequestPattern
+from .vs import AudioFormat, RequestPattern
 
-type NodeKey = vs.RawNode | Node[Any] | str
+type NodeKey = vs.RawNode | Node[Any] | NodeRef | str
 
 
 @dataclass(slots=True, kw_only=True)
 class MediaInfo(ABC):
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
-        return {field.name: getattr(self, field.name) for field in fields(self)}
+        data = dict[str, Any]()
+
+        for dfield in fields(self):
+            attr = getattr(self, dfield.name)
+            if dfield.name != "gpu_resident" or attr is not None:
+                data[dfield.name] = attr
+
+        return data
 
     @classmethod
     @abstractmethod
@@ -29,30 +36,37 @@ class MediaInfo(ABC):
 class VideoMediaInfo(MediaInfo):
     """Media information for video nodes."""
 
-    format: str
+    format_id: vs.PresetVideoFormat
     width: int
     height: int
     fps_num: int
     fps_den: int
     num_frames: int
-    type: Literal["video"] = "video"
+    gpu_resident: bool | None = None
+    type: Literal["vnode"] = "vnode"
 
     @property
     def fps(self) -> Fraction:
         """Frame rate as an exact Fraction."""
         return Fraction(self.fps_num, self.fps_den) if self.fps_den != 0 else Fraction(0, 1)
 
+    @property
+    def format(self) -> vs.VideoFormat:
+        """The resolved VideoFormat from the core."""
+        return vs.core.get_video_format(self.format_id)
+
     @classmethod
     @override
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
         return cls(
-            format=str(data["format"]),
+            format_id=vs.PresetVideoFormat(data["format_id"]),
             width=int(data["width"]),
             height=int(data["height"]),
             fps_num=int(data["fps_num"]),
             fps_den=int(data["fps_den"]),
             num_frames=int(data["num_frames"]),
+            gpu_resident=data.get("gpu_resident"),
         )
 
 
@@ -60,28 +74,161 @@ class VideoMediaInfo(MediaInfo):
 class AudioMediaInfo(MediaInfo):
     """Media information for audio nodes."""
 
-    format: str
+    format_id: int
     sample_rate: int
-    bits_per_sample: int
-    num_channels: int
-    channel_layout: int
     num_samples: int
     num_frames: int
-    type: Literal["audio"] = "audio"
+    gpu_resident: bool | None = None
+    type: Literal["anode"] = "anode"
+
+    @property
+    def format(self) -> AudioFormat:
+        """The resolved AudioFormat."""
+        return AudioFormat.from_id(self.format_id)
 
     @classmethod
     @override
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
         return cls(
-            format=str(data["format"]),
+            format_id=int(data["format_id"]),
             sample_rate=int(data["sample_rate"]),
-            bits_per_sample=int(data["bits_per_sample"]),
-            num_channels=int(data["num_channels"]),
-            channel_layout=int(data["channel_layout"]),
             num_samples=int(data["num_samples"]),
             num_frames=int(data["num_frames"]),
+            gpu_resident=data.get("gpu_resident"),
         )
+
+
+@dataclass(slots=True, kw_only=True)
+class FrameInfo(ABC):
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to a dictionary."""
+        data = dict[str, Any]()
+
+        for dfield in fields(self):
+            attr = getattr(self, dfield.name)
+            if dfield.name != "gpu_resident" or attr is not None:
+                data[dfield.name] = attr
+
+        return data
+
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self: ...
+
+
+@dataclass(slots=True, kw_only=True)
+class VideoFrameInfo(FrameInfo):
+    """Video frame argument metadata."""
+
+    id: str
+    format_id: vs.PresetVideoFormat
+    width: int
+    height: int
+    gpu_resident: bool | None = None
+    type: Literal["vframe"] = "vframe"
+
+    @property
+    def format(self) -> vs.VideoFormat:
+        """The resolved VideoFormat from the core."""
+        return vs.core.get_video_format(self.format_id)
+
+    @classmethod
+    @override
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Construct from a dictionary."""
+        return cls(
+            id=str(data["id"]),
+            format_id=vs.PresetVideoFormat(data["format_id"]),
+            width=int(data["width"]),
+            height=int(data["height"]),
+            gpu_resident=data.get("gpu_resident"),
+        )
+
+
+@dataclass(slots=True, kw_only=True)
+class AudioFrameInfo(FrameInfo):
+    """Audio frame argument metadata."""
+
+    id: str
+    format_id: int
+    num_samples: int
+    gpu_resident: bool | None = None
+    type: Literal["aframe"] = "aframe"
+
+    @property
+    def format(self) -> AudioFormat:
+        """The resolved AudioFormat."""
+        return AudioFormat.from_id(self.format_id)
+
+    @classmethod
+    @override
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Construct from a dictionary."""
+        return cls(
+            id=str(data["id"]),
+            format_id=int(data["format_id"]),
+            num_samples=int(data["num_samples"]),
+            gpu_resident=data.get("gpu_resident"),
+        )
+
+
+@dataclass(slots=True, kw_only=True)
+class NodeRef(ABC):
+    """Reference to a node in a call frame argument."""
+
+    id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to a dictionary."""
+        return {dfield.name: getattr(self, dfield.name) for dfield in fields(self)}
+
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self: ...
+
+
+@dataclass(slots=True, kw_only=True)
+class VideoNodeRef(NodeRef):
+    """Video node argument reference."""
+
+    type: Literal["vnode"] = "vnode"
+
+    @classmethod
+    @override
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Construct from a dictionary."""
+        return cls(id=str(data["id"]))
+
+
+@dataclass(slots=True, kw_only=True)
+class AudioNodeRef(NodeRef):
+    """Audio node argument reference."""
+
+    type: Literal["anode"] = "anode"
+
+    @classmethod
+    @override
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Construct from a dictionary."""
+        return cls(id=str(data["id"]))
+
+
+@dataclass(slots=True, kw_only=True)
+class FuncRef:
+    """Function argument reference."""
+
+    id: str
+    type: Literal["func"] = "func"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to a dictionary."""
+        return {"id": self.id, "type": self.type}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Construct from a dictionary."""
+        return cls(id=str(data["id"]))
 
 
 @dataclass(slots=True, kw_only=True)
@@ -89,7 +236,7 @@ class CallFrame:
     """Represents a call frame in the node creation stack."""
 
     level: int
-    frame_id: str
+    id: str
     plugin_id: str
     plugin_ns: str
     function: str
@@ -97,18 +244,51 @@ class CallFrame:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
-        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+        def serialize_arg(val: Any) -> Any:
+            if isinstance(val, (FrameInfo, NodeRef, FuncRef)):
+                return val.to_dict()
+            if isinstance(val, list):
+                return [serialize_arg(item) for item in val]
+            return val
+
+        return {
+            "level": self.level,
+            "id": self.id,
+            "plugin_id": self.plugin_id,
+            "plugin_ns": self.plugin_ns,
+            "function": self.function,
+            "arguments": {k: serialize_arg(v) for k, v in self.arguments.items()},
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
+
+        def parse_args(val: Any) -> Any:
+            if isinstance(val, dict):
+                match val.get("type"):
+                    case "vnode":
+                        return VideoNodeRef.from_dict(val)
+                    case "anode":
+                        return AudioNodeRef.from_dict(val)
+                    case "vframe":
+                        return VideoFrameInfo.from_dict(val)
+                    case "aframe":
+                        return AudioFrameInfo.from_dict(val)
+                    case "func":
+                        return FuncRef.from_dict(val)
+                    case _:
+                        return val
+            return [parse_args(item) for item in val] if isinstance(val, list) else val
+
         return cls(
             level=int(data["level"]),
-            frame_id=str(data["frame_id"]),
+            id=str(data["id"]),
             plugin_id=str(data["plugin_id"]),
             plugin_ns=str(data["plugin_ns"]),
             function=str(data["function"]),
-            arguments=dict(data["arguments"]),
+            arguments={k: parse_args(v) for k, v in data["arguments"].items()},
         )
 
 
@@ -116,31 +296,18 @@ class CallFrame:
 class Edge:
     """Represents a dependency edge between nodes in the graph."""
 
-    from_: str
-    to: str
+    source: str
+    target: str
     pattern: RequestPattern
-
-    @property
-    def source(self) -> str:
-        """Alias for from_ (upstream node ID)."""
-        return self.from_
-
-    @property
-    def target(self) -> str:
-        """Alias for to (downstream node ID)."""
-        return self.to
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
-        return {"from": self.from_, "to": self.to, "pattern": self.pattern}
+        return {"source": self.source, "target": self.target, "pattern": self.pattern}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
-        from_node = data.get("from")
-        if from_node is None:
-            from_node = data["from_"]
-        return cls(from_=str(from_node), to=str(data["to"]), pattern=RequestPattern(data["pattern"]))
+        return cls(source=str(data["source"]), target=str(data["target"]), pattern=RequestPattern(data["pattern"]))
 
 
 @dataclass(slots=True, kw_only=True)
@@ -161,7 +328,7 @@ class Node[MediaInfoT: MediaInfo]:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
-        return {
+        data: dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "filter_mode": self.filter_mode,
@@ -169,15 +336,15 @@ class Node[MediaInfoT: MediaInfo]:
             "media_info": self.media_info.to_dict(),
             "call_stack": [frame.to_dict() for frame in self.call_stack],
         }
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
-        raw_info = data["media_info"]
-        match raw_info["type"]:
-            case "video":
+        match (raw_info := data["media_info"])["type"]:
+            case "vnode":
                 media_info = VideoMediaInfo.from_dict(raw_info)
-            case "audio":
+            case "anode":
                 media_info = AudioMediaInfo.from_dict(raw_info)
             case other:
                 raise ValueError(f"Unknown media_info type: {other!r}")
@@ -204,7 +371,11 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
 
     @override
     def __contains__(self, node_or_id: object) -> bool:
-        return to_node_id(node_or_id) in self.nodes_by_id if isinstance(node_or_id, (vs.RawNode, Node, str)) else False
+        return (
+            to_node_id(node_or_id) in self.nodes_by_id
+            if isinstance(node_or_id, (vs.RawNode, Node, NodeRef, str))
+            else False
+        )
 
     @override
     def __iter__(self) -> Iterator[Node[MediaInfoT]]:
@@ -235,24 +406,24 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
     def get_incoming_edges(self, node_or_id: NodeKey) -> list[Edge]:
         """Return all edges where this node is the target (inputs to this node)."""
         nid = to_node_id(node_or_id)
-        return [edge for edge in self.edges if edge.to == nid]
+        return [edge for edge in self.edges if edge.target == nid]
 
     def get_outgoing_edges(self, node_or_id: NodeKey) -> list[Edge]:
         """Return all edges where this node is the source (outputs from this node)."""
         nid = to_node_id(node_or_id)
-        return [edge for edge in self.edges if edge.from_ == nid]
+        return [edge for edge in self.edges if edge.source == nid]
 
     def get_dependencies(self, node_or_id: NodeKey) -> list[Node[MediaInfoT]]:
         """Return upstream nodes that this node directly depends on."""
         node_map = self.nodes_by_id
         incoming = self.get_incoming_edges(node_or_id)
-        return [node_map[e.from_] for e in incoming if e.from_ in node_map]
+        return [node_map[e.source] for e in incoming if e.source in node_map]
 
     def get_dependents(self, node_or_id: NodeKey) -> list[Node[MediaInfoT]]:
         """Return downstream nodes that directly depend on this node."""
         node_map = self.nodes_by_id
         outgoing = self.get_outgoing_edges(node_or_id)
-        return [node_map[e.to] for e in outgoing if e.to in node_map]
+        return [node_map[e.target] for e in outgoing if e.target in node_map]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert graph to a dictionary matching the JSON format."""
@@ -275,9 +446,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
         for edge in self.edges:
             pattern_label = edge.pattern.name if edge.pattern != RequestPattern.GENERAL else ""
             if pattern_label:
-                lines.append(f"    {edge.from_} -->|{pattern_label}| {edge.to}")
+                lines.append(f"    {edge.source} -->|{pattern_label}| {edge.target}")
             else:
-                lines.append(f"    {edge.from_} --> {edge.to}")
+                lines.append(f"    {edge.source} --> {edge.target}")
         return "\n".join(lines)
 
     def to_dot(self, *, direction: str = "TB", detailed: bool = True, fontname: str | None = None) -> str:
@@ -306,9 +477,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
 
                 match node.media_info:
                     case VideoMediaInfo() as vi:
-                        info_line = f"{vi.width}x{vi.height} | {vi.format} | {float(vi.fps):.3f} fps"
+                        info_line = f"{vi.width}x{vi.height} | {vi.format.name} | {float(vi.fps):.3f} fps"
                     case AudioMediaInfo() as ai:
-                        info_line = f"{ai.sample_rate} Hz | {ai.num_channels} ch | {ai.format}"
+                        info_line = f"{ai.sample_rate} Hz | {ai.format.num_channels} ch"
 
                 perf_line = f"Time: {node.processing_time_ms:.2f} ms | Mode: {node.filter_mode.name}"
 
@@ -327,9 +498,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
         for edge in self.edges:
             pattern_label = edge.pattern.name if edge.pattern != RequestPattern.GENERAL else ""
             if pattern_label:
-                lines.append(f'    "{edge.from_}" -> "{edge.to}" [label="{pattern_label}"];')
+                lines.append(f'    "{edge.source}" -> "{edge.target}" [label="{pattern_label}"];')
             else:
-                lines.append(f'    "{edge.from_}" -> "{edge.to}";')
+                lines.append(f'    "{edge.source}" -> "{edge.target}";')
 
         lines.append("}")
         return "\n".join(lines)
@@ -351,9 +522,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
 
             match node.media_info:
                 case VideoMediaInfo() as vi:
-                    spec = f"{vi.width}x{vi.height} {vi.format}"
+                    spec = f"{vi.width}x{vi.height} {vi.format.name}"
                 case AudioMediaInfo() as ai:
-                    spec = f"{ai.sample_rate}Hz {ai.num_channels}ch {ai.format}"
+                    spec = f"{ai.sample_rate}Hz {ai.format.num_channels}ch"
 
             return f"{node.name} [{node.id}] ({spec}, {node.processing_time_ms:.2f}ms)"
 
@@ -405,9 +576,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
             "edges": [
                 {
                     "data": {
-                        "id": f"e{i}_{edge.from_}_{edge.to}",
-                        "source": edge.from_,
-                        "target": edge.to,
+                        "id": f"e{i}_{edge.source}_{edge.target}",
+                        "source": edge.source,
+                        "target": edge.target,
                         "pattern": edge.pattern.value,
                         "pattern_name": edge.pattern.name,
                         "label": edge.pattern.name if edge.pattern != RequestPattern.GENERAL else "",
@@ -433,9 +604,9 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
 
 
 def to_node_id(node_or_id: NodeKey) -> str:
-    """Normalize a Python VideoNode/AudioNode, graph Node, or string ID to a node ID string."""
+    """Normalize a Python VideoNode/AudioNode, graph Node, NodeRef, or string ID to a node ID string."""
     if isinstance(node_or_id, vs.RawNode):
-        return f"node_{hash(node_or_id)}"
-    if isinstance(node_or_id, Node):
+        return str(hash(node_or_id))
+    if isinstance(node_or_id, (Node, NodeRef)):
         return node_or_id.id
     return str(node_or_id)

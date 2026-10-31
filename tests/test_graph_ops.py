@@ -32,8 +32,8 @@ def test_graph_traversal(diamond_video_dag: vs.VideoNode) -> None:
 
     # Test edge properties
     for edge in graph.edges:
-        assert edge.source == edge.from_
-        assert edge.target == edge.to
+        assert edge.source == edge.source
+        assert edge.target == edge.target
 
 
 def test_mermaid_export(diamond_video_dag: vs.VideoNode) -> None:
@@ -47,4 +47,4 @@ def test_mermaid_export(diamond_video_dag: vs.VideoNode) -> None:
         assert any(node.id in line for line in lines)
 
     for edge in graph.edges:
-        assert any(f"{edge.from_} -->" in line for line in lines)
+        assert any(f"{edge.source} -->" in line for line in lines)

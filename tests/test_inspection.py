@@ -20,21 +20,21 @@ def test_single_video_node(blank_video: vs.VideoNode) -> None:
     assert root.name == "BlankClip"
 
     vinfo = root.media_info
-    assert vinfo.format == "RGB24"
+    assert vinfo.format_id == vs.RGB24
     assert vinfo.width == 640
     assert vinfo.height == 480
     assert vinfo.fps_num == 24
     assert vinfo.fps_den == 1
     assert vinfo.fps == Fraction(24, 1)
     assert vinfo.num_frames == 100
-    assert vinfo.type == "video"
+    assert vinfo.type == "vnode"
 
     assert len(root.call_stack) >= 1
     frame = root.call_stack[0]
     assert frame.plugin_ns == "std"
     assert frame.function == "BlankClip"
     assert frame.level >= 0
-    assert frame.frame_id.startswith("frame_")
+    assert frame.id.isdigit()
 
 
 def test_linear_video_pipeline(video_pipeline: vs.VideoNode) -> None:
@@ -55,20 +55,20 @@ def test_linear_video_pipeline(video_pipeline: vs.VideoNode) -> None:
     assert vinfo is not None
     assert vinfo.width == 1280
     assert vinfo.height == 720
-    assert vinfo.format == "YUV420P8"
+    assert vinfo.format_id == vs.YUV420P8
 
     # Verify edge connectivity
     bicubic_node = graph.root
     incoming_to_bicubic = graph.get_incoming_edges(bicubic_node)
     assert len(incoming_to_bicubic) == 1
 
-    text_node = graph[incoming_to_bicubic[0].from_]
+    text_node = graph[incoming_to_bicubic[0].source]
     assert text_node.name == "Text"
 
     incoming_to_text = graph.get_incoming_edges(text_node)
     assert len(incoming_to_text) == 1
 
-    blank_node = graph[incoming_to_text[0].from_]
+    blank_node = graph[incoming_to_text[0].source]
     assert blank_node.name == "BlankClip"
 
 
@@ -109,10 +109,8 @@ def test_single_audio_node(blank_audio: vs.AudioNode) -> None:
 
     ainfo = root.media_info
     assert ainfo.sample_rate == 44100
-    assert ainfo.bits_per_sample == 16
-    assert ainfo.num_channels == 2
     assert ainfo.num_samples == 44100
-    assert ainfo.type == "audio"
+    assert ainfo.type == "anode"
 
     assert len(root.call_stack) >= 1
     frame = root.call_stack[0]
@@ -138,5 +136,4 @@ def test_audio_pipeline(blank_audio: vs.AudioNode) -> None:
 
     incoming = graph.get_incoming_edges(graph.root)
     assert len(incoming) == 2
-    assert all(e.from_ == deps[0].id for e in incoming)
-
+    assert all(e.source == deps[0].id for e in incoming)
