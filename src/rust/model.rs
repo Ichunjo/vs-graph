@@ -20,31 +20,71 @@ pub(crate) struct NodeEntry {
 }
 
 #[derive(Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub(crate) enum MediaInfo {
+    #[serde(rename = "vnode")]
     Video {
-        format: String,
+        format_id: u32,
         width: i32,
         height: i32,
         fps_num: i64,
         fps_den: i64,
         num_frames: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_resident: Option<bool>,
     },
+    #[serde(rename = "anode")]
     Audio {
-        format: String,
+        format_id: u64,
         sample_rate: i32,
-        bits_per_sample: i32,
-        num_channels: i32,
-        channel_layout: u64,
         num_samples: i64,
         num_frames: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_resident: Option<bool>,
     },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+pub(crate) enum FrameInfo {
+    #[serde(rename = "vframe")]
+    Video {
+        id: String,
+        format_id: u32,
+        width: i32,
+        height: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_resident: Option<bool>,
+    },
+    #[serde(rename = "aframe")]
+    Audio {
+        id: String,
+        format_id: u64,
+        num_samples: i32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_resident: Option<bool>,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+pub(crate) enum NodeRef {
+    #[serde(rename = "vnode")]
+    Video { id: String },
+    #[serde(rename = "anode")]
+    Audio { id: String },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "func")]
+pub(crate) struct FuncRef {
+    pub(crate) id: String,
 }
 
 #[derive(Serialize)]
 pub(crate) struct CallFrame {
     pub(crate) level: i32,
-    pub(crate) frame_id: String,
+    pub(crate) id: String,
     pub(crate) plugin_id: String,
     pub(crate) plugin_ns: String,
     pub(crate) function: String,
@@ -53,7 +93,7 @@ pub(crate) struct CallFrame {
 
 #[derive(Serialize)]
 pub(crate) struct EdgeEntry {
-    pub(crate) from: String,
-    pub(crate) to: String,
+    pub(crate) source: String,
+    pub(crate) target: String,
     pub(crate) pattern: i32,
 }

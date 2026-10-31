@@ -8,12 +8,20 @@ use serde_json::{Number, Value};
 use vapoursynth4_rs::{
     api::Api,
     core::CoreRef,
-    ffi::{VSDataTypeHint, VSMap, VSMapPropertyError, VSMediaType, VSNode, VSPropertyType},
+    ffi::{
+        VSDataTypeHint,
+        VSFrame,
+        VSMap,
+        VSMapPropertyError,
+        VSMediaType,
+        VSNode,
+        VSPropertyType,
+    },
 };
 
 use crate::{
-    api::GraphApiFns,
-    model::{CallFrame, EdgeEntry, GraphOutput, MediaInfo, NodeEntry},
+    api::{GraphApiFns, get_audio_format_id, get_video_format_id},
+    model::{CallFrame, EdgeEntry, FrameInfo, FuncRef, GraphOutput, MediaInfo, NodeEntry, NodeRef},
 };
 
 pub(crate) struct GraphInspector {
@@ -46,7 +54,7 @@ impl GraphInspector {
                 continue;
             }
 
-            let this_id = node_id(n);
+            let this_id = ptr_id(n);
 
             // SAFETY: `n` is a valid `VSNode` pointer visited during graph traversal.
             let (name, filter_mode, processing_time_ns) = unsafe {
@@ -66,8 +74,8 @@ impl GraphInspector {
                     let dep_ptr = (self.api.getNodeDependency)(n, i);
                     if let Some(dep) = dep_ptr.as_ref() {
                         edges.push(EdgeEntry {
-                            from: node_id(dep.source),
-                            to: this_id.clone(),
+                            source: ptr_id(dep.source),
+                            target: this_id.clone(),
                             pattern: dep.request_pattern as i32,
                         });
                         stack.push(dep.source);
@@ -86,7 +94,7 @@ impl GraphInspector {
         }
 
         let graph = GraphOutput {
-            root_id: node_id(root_node),
+            root_id: ptr_id(root_node),
             nodes,
             edges,
         };
@@ -106,29 +114,24 @@ impl GraphInspector {
             match (self.api.getNodeType)(node) {
                 VSMediaType::Video => {
                     let vi = &*(self.api.getVideoInfo)(node);
-                    let format =
-                        query_format_name(&raw const vi.format, self.api.getVideoFormatName);
                     MediaInfo::Video {
-                        format,
+                        format_id: get_video_format_id(&vi.format),
                         width: vi.width,
                         height: vi.height,
                         fps_num: vi.fps_num,
                         fps_den: vi.fps_den,
                         num_frames: vi.num_frames,
+                        gpu_resident: self.graph_api.get_node_residency(node),
                     }
                 }
                 VSMediaType::Audio => {
                     let ai = &*(self.api.getAudioInfo)(node);
-                    let format =
-                        query_format_name(&raw const ai.format, self.api.getAudioFormatName);
                     MediaInfo::Audio {
-                        format,
+                        format_id: get_audio_format_id(&ai.format),
                         sample_rate: ai.sample_rate,
-                        bits_per_sample: ai.format.bits_per_sample,
-                        num_channels: ai.format.num_channels,
-                        channel_layout: ai.format.channel_layout,
                         num_samples: ai.num_samples,
                         num_frames: ai.num_frames,
+                        gpu_resident: self.graph_api.get_node_residency(node),
                     }
                 }
             }
@@ -140,14 +143,14 @@ impl GraphInspector {
         let mut stack = Vec::new();
         for level in 0..c_int::MAX {
             // SAFETY: caller guarantees `node` is valid.
-            let Some((args_ptr, plugin_id, plugin_ns, function)) = (unsafe {
-                let args = (self.graph_api.function_arguments)(node, level);
+            let Some((args_ptr, plugin_id, plugin_ns, function)) = ({
+                let args = self.graph_api.function_arguments(node, level);
                 (!args.is_null()).then(|| {
                     (
                         args,
-                        cstr_to_string((self.graph_api.plugin_id)(node, level)),
-                        cstr_to_string((self.graph_api.plugin_ns)(node, level)),
-                        cstr_to_string((self.graph_api.function_name)(node, level)),
+                        cstr_to_string(self.graph_api.plugin_id(node, level)),
+                        cstr_to_string(self.graph_api.plugin_ns(node, level)),
+                        cstr_to_string(self.graph_api.function_name(node, level)),
                     )
                 })
             }) else {
@@ -157,7 +160,7 @@ impl GraphInspector {
             let arguments = self.serialize_vsmap(args_ptr);
             stack.push(CallFrame {
                 level,
-                frame_id: frame_id(args_ptr),
+                id: ptr_id(args_ptr),
                 plugin_id,
                 plugin_ns,
                 function,
@@ -169,7 +172,7 @@ impl GraphInspector {
 
     /// Serializes a `VapourSynth` map to a JSON key-value object.
     fn serialize_vsmap(&self, map: *const VSMap) -> BTreeMap<String, Value> {
-        let Some(raw_map) = RawMap::from_ptr(map, &self.api) else {
+        let Some(raw_map) = RawMap::from_ptr(map, &self.api, &self.graph_api) else {
             return BTreeMap::new();
         };
         raw_map.to_json_map()
@@ -179,75 +182,16 @@ impl GraphInspector {
 struct RawMap<'a> {
     ptr: *const VSMap,
     api: &'a Api,
+    graph_api: &'a GraphApiFns,
 }
 
 impl<'a> RawMap<'a> {
-    fn from_ptr(ptr: *const VSMap, api: &'a Api) -> Option<Self> {
-        (!ptr.is_null()).then_some(Self { ptr, api })
-    }
-
-    fn num_keys(&self) -> i32 {
-        // SAFETY: `self.ptr` is valid and non-null.
-        unsafe { (self.api.mapNumKeys)(self.ptr) }
-    }
-
-    fn get_key(&self, index: i32) -> Option<&'a CStr> {
-        // SAFETY: `self.ptr` is valid.
-        let ptr = unsafe { (self.api.mapGetKey)(self.ptr, index) };
-        (!ptr.is_null()).then(|| {
-            // SAFETY: `mapGetKey` returns a valid null-terminated C string with map lifetime.
-            unsafe { CStr::from_ptr(ptr) }
+    fn from_ptr(ptr: *const VSMap, api: &'a Api, graph_api: &'a GraphApiFns) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self {
+            ptr,
+            api,
+            graph_api,
         })
-    }
-
-    fn num_elements(&self, key: &CStr) -> i32 {
-        // SAFETY: `self.ptr` and `key` are valid pointers.
-        unsafe { (self.api.mapNumElements)(self.ptr, key.as_ptr()) }
-    }
-
-    fn prop_type(&self, key: &CStr) -> VSPropertyType {
-        // SAFETY: `self.ptr` and `key` are valid pointers.
-        unsafe { (self.api.mapGetType)(self.ptr, key.as_ptr()) }
-    }
-
-    fn get_int(&self, key: &CStr, index: i32) -> i64 {
-        let mut err = VSMapPropertyError::Success;
-        // SAFETY: `self.ptr` and `key` are valid pointers.
-        unsafe { (self.api.mapGetInt)(self.ptr, key.as_ptr(), index, &raw mut err) }
-    }
-
-    fn get_float(&self, key: &CStr, index: i32) -> f64 {
-        let mut err = VSMapPropertyError::Success;
-        // SAFETY: `self.ptr` and `key` are valid pointers.
-        unsafe { (self.api.mapGetFloat)(self.ptr, key.as_ptr(), index, &raw mut err) }
-    }
-
-    fn get_data(&self, key: &CStr, index: i32) -> (VSDataTypeHint, &[u8]) {
-        let mut err = VSMapPropertyError::Success;
-        let key_ptr = key.as_ptr();
-        // SAFETY: `self.ptr` and `key_ptr` are valid pointers.
-        unsafe {
-            let hint = (self.api.mapGetDataTypeHint)(self.ptr, key_ptr, index, &raw mut err);
-            let size = (self.api.mapGetDataSize)(self.ptr, key_ptr, index, &raw mut err);
-            let data_ptr = (self.api.mapGetData)(self.ptr, key_ptr, index, &raw mut err);
-            let bytes = if data_ptr.is_null() || size <= 0 {
-                &[]
-            } else {
-                slice::from_raw_parts(data_ptr.cast::<u8>(), size as usize)
-            };
-            (hint, bytes)
-        }
-    }
-
-    fn get_node_id(&self, key: &CStr, index: i32) -> String {
-        let mut err = VSMapPropertyError::Success;
-        // SAFETY: `self.ptr` and `key` are valid pointers.
-        unsafe {
-            let node_ptr = (self.api.mapGetNode)(self.ptr, key.as_ptr(), index, &raw mut err);
-            let id = node_id(node_ptr);
-            (self.api.freeNode)(node_ptr);
-            id
-        }
     }
 
     fn to_json_map(&self) -> BTreeMap<String, Value> {
@@ -299,23 +243,173 @@ impl<'a> RawMap<'a> {
                     Value::String(format!("<binary: {} bytes>", bytes.len()))
                 }
             }
-            VSPropertyType::VideoNode | VSPropertyType::AudioNode => {
-                Value::String(self.get_node_id(key, index))
+            VSPropertyType::VideoNode => {
+                let id = self.get_node_id(key, index);
+                serde_json::to_value(NodeRef::Video { id }).unwrap_or(Value::Null)
             }
-            VSPropertyType::VideoFrame => Value::String("<vframe>".to_owned()),
-            VSPropertyType::AudioFrame => Value::String("<aframe>".to_owned()),
-            VSPropertyType::Function => Value::String("<func>".to_owned()),
+            VSPropertyType::AudioNode => {
+                let id = self.get_node_id(key, index);
+                serde_json::to_value(NodeRef::Audio { id }).unwrap_or(Value::Null)
+            }
+            VSPropertyType::VideoFrame => {
+                let mut err = VSMapPropertyError::Success;
+                // SAFETY: `self.ptr` and `key` are valid pointers.
+                let frame_ptr =
+                    unsafe { (self.api.mapGetFrame)(self.ptr, key.as_ptr(), index, &raw mut err) };
+                if frame_ptr.is_null() {
+                    Value::Null
+                } else {
+                    let val = self.extract_video_frame(frame_ptr);
+                    // SAFETY: `frame_ptr` was obtained from `mapGetFrame` which incremented refcount.
+                    unsafe { (self.api.freeFrame)(frame_ptr) };
+                    val
+                }
+            }
+            VSPropertyType::AudioFrame => {
+                let mut err = VSMapPropertyError::Success;
+                // SAFETY: `self.ptr` and `key` are valid pointers.
+                let frame_ptr =
+                    unsafe { (self.api.mapGetFrame)(self.ptr, key.as_ptr(), index, &raw mut err) };
+                if frame_ptr.is_null() {
+                    Value::Null
+                } else {
+                    let val = self.extract_audio_frame(frame_ptr);
+                    // SAFETY: `frame_ptr` was obtained from `mapGetFrame` which incremented refcount.
+                    unsafe { (self.api.freeFrame)(frame_ptr) };
+                    val
+                }
+            }
+            VSPropertyType::Function => {
+                let mut err = VSMapPropertyError::Success;
+                // SAFETY: `self.ptr` and `key` are valid pointers.
+                let func_ptr = unsafe {
+                    (self.api.mapGetFunction)(self.ptr, key.as_ptr(), index, &raw mut err)
+                };
+                if func_ptr.is_null() {
+                    Value::Null
+                } else {
+                    let id = ptr_id(func_ptr);
+                    // SAFETY: `func_ptr` was obtained from `mapGetFunction` which incremented refcount.
+                    unsafe { (self.api.freeFunction)(func_ptr) };
+                    serde_json::to_value(FuncRef { id }).unwrap_or(Value::Null)
+                }
+            }
             VSPropertyType::Unset => Value::Null,
         }
     }
+
+    fn num_keys(&self) -> i32 {
+        // SAFETY: `self.ptr` is valid and non-null.
+        unsafe { (self.api.mapNumKeys)(self.ptr) }
+    }
+
+    fn get_key(&self, index: i32) -> Option<&'a CStr> {
+        // SAFETY: `self.ptr` is valid.
+        let ptr = unsafe { (self.api.mapGetKey)(self.ptr, index) };
+        (!ptr.is_null()).then(|| {
+            // SAFETY: `mapGetKey` returns a valid null-terminated C string with map lifetime.
+            unsafe { CStr::from_ptr(ptr) }
+        })
+    }
+
+    fn num_elements(&self, key: &CStr) -> i32 {
+        // SAFETY: `self.ptr` and `key` are valid pointers.
+        unsafe { (self.api.mapNumElements)(self.ptr, key.as_ptr()) }
+    }
+
+    fn prop_type(&self, key: &CStr) -> VSPropertyType {
+        // SAFETY: `self.ptr` and `key` are valid pointers.
+        unsafe { (self.api.mapGetType)(self.ptr, key.as_ptr()) }
+    }
+
+    fn get_int(&self, key: &CStr, index: i32) -> i64 {
+        let mut err = VSMapPropertyError::Success;
+        // SAFETY: `self.ptr` and `key` are valid pointers.
+        unsafe { (self.api.mapGetInt)(self.ptr, key.as_ptr(), index, &raw mut err) }
+    }
+
+    fn get_float(&self, key: &CStr, index: i32) -> f64 {
+        let mut err = VSMapPropertyError::Success;
+        // SAFETY: `self.ptr` and `key` are valid pointers.
+        unsafe { (self.api.mapGetFloat)(self.ptr, key.as_ptr(), index, &raw mut err) }
+    }
+
+    fn get_data(&self, key: &CStr, index: i32) -> (VSDataTypeHint, &[u8]) {
+        let mut err = VSMapPropertyError::Success;
+        let key_ptr = key.as_ptr();
+        // SAFETY: `self.ptr` and `key_ptr` are valid pointers.
+        unsafe {
+            let hint = (self.api.mapGetDataTypeHint)(self.ptr, key_ptr, index, &raw mut err);
+            let size = (self.api.mapGetDataSize)(self.ptr, key_ptr, index, &raw mut err);
+            let data_ptr = (self.api.mapGetData)(self.ptr, key_ptr, index, &raw mut err);
+            let bytes = if data_ptr.is_null() || size <= 0 {
+                &[]
+            } else {
+                #[allow(clippy::cast_sign_loss)]
+                slice::from_raw_parts(data_ptr.cast::<u8>(), size as usize)
+            };
+            (hint, bytes)
+        }
+    }
+
+    fn get_node_id(&self, key: &CStr, index: i32) -> String {
+        let mut err = VSMapPropertyError::Success;
+        // SAFETY: `self.ptr` and `key` are valid pointers.
+        let node_ptr =
+            unsafe { (self.api.mapGetNode)(self.ptr, key.as_ptr(), index, &raw mut err) };
+        let id: String = ptr_id(node_ptr);
+        // SAFETY: `node_ptr` was obtained from `mapGetNode` which incremented refcount.
+        unsafe { (self.api.freeNode)(node_ptr) };
+        id
+    }
+
+    fn extract_video_frame(&self, frame: *const VSFrame) -> Value {
+        let id = ptr_id(frame);
+        // SAFETY: `frame` is a valid non-null pointer.
+        let (format_id, width, height) = unsafe {
+            let fmt_ptr = (self.api.getVideoFrameFormat)(frame);
+            let format_id = get_video_format_id(&*fmt_ptr);
+            (
+                format_id,
+                (self.api.getFrameWidth)(frame, 0),
+                (self.api.getFrameHeight)(frame, 0),
+            )
+        };
+
+        let gpu_resident = self.graph_api.get_frame_residency(frame);
+        let info = FrameInfo::Video {
+            id,
+            format_id,
+            width,
+            height,
+            gpu_resident,
+        };
+        serde_json::to_value(info).unwrap_or(Value::Null)
+    }
+
+    fn extract_audio_frame(&self, frame: *const VSFrame) -> Value {
+        let id = ptr_id(frame);
+        // SAFETY: `frame` is a valid non-null pointer.
+        let (format_id, num_samples) = unsafe {
+            let fmt_ptr = (self.api.getAudioFrameFormat)(frame);
+            let format_id = get_audio_format_id(&*fmt_ptr);
+            (format_id, (self.api.getFrameLength)(frame))
+        };
+
+        let gpu_resident = self.graph_api.get_frame_residency(frame);
+
+        let arg = FrameInfo::Audio {
+            id,
+            format_id,
+            num_samples,
+            gpu_resident,
+        };
+        serde_json::to_value(arg).unwrap_or(Value::Null)
+    }
 }
 
-fn node_id(node: *const VSNode) -> String {
-    format!("node_{}", node.addr())
-}
-
-fn frame_id(args: *const VSMap) -> String {
-    format!("frame_{}", args.addr())
+fn ptr_id<T>(ptr: *const T) -> String {
+    ptr.addr().to_string()
 }
 
 /// Converts a nullable C string pointer into an owned `String`.
@@ -336,22 +430,4 @@ fn cstr_to_string(ptr: *const c_char) -> String {
 
 fn is_ascii_printable(bytes: &[u8]) -> bool {
     bytes.iter().all(|&b| (b' '..=b'~').contains(&b))
-}
-
-/// Queries the name of a video or audio format using the provided FFI getter.
-///
-/// # Safety
-/// `format` must be a valid pointer expected by `get_name`.
-fn query_format_name<T>(
-    format: *const T,
-    get_name: unsafe extern "system-unwind" fn(*const T, *mut c_char) -> c_int,
-) -> String {
-    let mut buf = [0; 32];
-    // SAFETY: caller guarantees `format` is valid, and `buf` is a stack buffer of size 32.
-    let ok = unsafe { get_name(format, buf.as_mut_ptr()) } != 0;
-    if ok {
-        cstr_to_string(buf.as_ptr())
-    } else {
-        "Undefined".to_owned()
-    }
 }
