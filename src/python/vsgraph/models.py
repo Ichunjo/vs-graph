@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass, field, fields
 from fractions import Fraction
+from functools import cache
+from inspect import Signature
+from operator import attrgetter
 from typing import Any, Literal, Self, override
 
 import vapoursynth as vs
@@ -272,13 +275,16 @@ class CallFrame:
                 return [serialize_arg(item) for item in val]
             return val
 
+        param_names = _get_param_names(f"{self.plugin_ns}.{self.function}")
+        arguments = {k: serialize_arg(self.arguments[k]) for k in param_names if k in self.arguments}
+
         return {
             "level": self.level,
             "id": self.id,
             "plugin_id": self.plugin_id,
             "plugin_ns": self.plugin_ns,
             "function": self.function,
-            "arguments": {k: serialize_arg(v) for k, v in self.arguments.items()},
+            "arguments": arguments,
         }
 
     @classmethod
@@ -630,3 +636,8 @@ def to_node_id(node_or_id: NodeKey) -> str:
     if isinstance(node_or_id, (Node, NodeRef)):
         return node_or_id.id
     return str(node_or_id)
+
+
+@cache
+def _get_param_names(function_namespace: str) -> Collection[str]:
+    return Signature.from_callable(attrgetter(function_namespace)(vs.core)).parameters.keys()
