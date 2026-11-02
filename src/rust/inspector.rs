@@ -9,6 +9,7 @@ use vapoursynth4_rs::{
     api::Api,
     core::CoreRef,
     ffi::{
+        VSCore,
         VSDataTypeHint,
         VSFrame,
         VSMap,
@@ -27,6 +28,7 @@ use crate::{
 pub(crate) struct GraphInspector {
     api: Api,
     graph_api: GraphApiFns,
+    core_ptr: *mut VSCore,
 }
 
 impl GraphInspector {
@@ -35,6 +37,7 @@ impl GraphInspector {
         Ok(Self {
             api: core.api(),
             graph_api,
+            core_ptr: core.as_ptr(),
         })
     }
 
@@ -43,7 +46,9 @@ impl GraphInspector {
         &self,
         root_node: *mut VSNode,
         pretty: bool,
+        reset_timing: bool,
     ) -> Result<String, &'static CStr> {
+        let reset = i32::from(reset_timing);
         let mut stack = vec![root_node];
         let mut visited = HashSet::new();
         let mut nodes = Vec::new();
@@ -61,7 +66,7 @@ impl GraphInspector {
                 (
                     cstr_to_string((self.api.getNodeName)(n)),
                     (self.api.getNodeFilterMode)(n) as i32,
-                    (self.api.getNodeProcessingTime)(n, 0),
+                    (self.api.getNodeProcessingTime)(n, reset),
                 )
             };
             let media_info = self.extract_media_info(n);
@@ -77,6 +82,7 @@ impl GraphInspector {
                             source: ptr_id(dep.source),
                             target: this_id.clone(),
                             pattern: dep.request_pattern as i32,
+                            index: i,
                         });
                         stack.push(dep.source);
                     }
@@ -91,6 +97,13 @@ impl GraphInspector {
                 media_info,
                 call_stack,
             });
+        }
+
+        if reset_timing {
+            // SAFETY: `self.core_ptr` is a valid `VSCore` pointer.
+            unsafe {
+                (self.api.getFreedNodeProcessingTime)(self.core_ptr, 1);
+            }
         }
 
         let graph = GraphOutput {

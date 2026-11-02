@@ -57,16 +57,18 @@ def test_linear_video_pipeline(video_pipeline: vs.VideoNode) -> None:
     assert vinfo.height == 720
     assert vinfo.format_id == vs.YUV420P8
 
-    # Verify edge connectivity
+    # Verify edge connectivity and index
     bicubic_node = graph.root
     incoming_to_bicubic = graph.get_incoming_edges(bicubic_node)
     assert len(incoming_to_bicubic) == 1
+    assert incoming_to_bicubic[0].index == 0
 
     text_node = graph[incoming_to_bicubic[0].source]
     assert text_node.name == "Text"
 
     incoming_to_text = graph.get_incoming_edges(text_node)
     assert len(incoming_to_text) == 1
+    assert incoming_to_text[0].index == 0
 
     blank_node = graph[incoming_to_text[0].source]
     assert blank_node.name == "BlankClip"
@@ -84,10 +86,17 @@ def test_branching_video_dag(diamond_video_dag: vs.VideoNode) -> None:
     assert "Bicubic" in dep_names
     assert "Invert" in dep_names
 
+    incoming = graph.get_incoming_edges(splice_node)
+    assert len(incoming) == 2
+    assert {e.index for e in incoming} == {0, 1}
+
     # Invert in turn depends on Bicubic
     invert_node = next(n for n in graph.nodes if n.name == "Invert")
     invert_deps = graph.get_dependencies(invert_node)
     assert any(n.name == "Bicubic" for n in invert_deps)
+    invert_incoming = graph.get_incoming_edges(invert_node)
+    assert len(invert_incoming) == 1
+    assert invert_incoming[0].index == 0
 
     # Bicubic has two downstream dependents: Splice and Invert
     bicubic_node = next(n for n in graph.nodes if n.name == "Bicubic")
@@ -137,3 +146,5 @@ def test_audio_pipeline(blank_audio: vs.AudioNode) -> None:
     incoming = graph.get_incoming_edges(graph.root)
     assert len(incoming) == 2
     assert all(e.source == deps[0].id for e in incoming)
+    assert incoming[0].index == 0
+    assert incoming[1].index == 1

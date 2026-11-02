@@ -98,4 +98,5 @@ pub(crate) struct EdgeEntry {
     pub(crate) source: String,
     pub(crate) target: String,
     pub(crate) pattern: i32,
+    pub(crate) index: i32,
 }

@@ -31,7 +31,7 @@ impl GraphTarget for VideoTarget {
     type FrameType = VideoFrame;
 
     const NAME: &'static CStr = c"VideoGraph";
-    const ARGS: &'static CStr = c"clip:vnode;pretty:int:opt;";
+    const ARGS: &'static CStr = c"clip:vnode;pretty:int:opt;reset_timing:int:opt;";
     const CLIP_ERR: &'static CStr = c"Graph: Failed to get clip";
     const PROP_ERR: &'static CStr = c"Graph: Failed to set output property";
 
@@ -46,7 +46,7 @@ impl GraphTarget for AudioTarget {
     type FrameType = AudioFrame;
 
     const NAME: &'static CStr = c"AudioGraph";
-    const ARGS: &'static CStr = c"clip:anode;pretty:int:opt;";
+    const ARGS: &'static CStr = c"clip:anode;pretty:int:opt;reset_timing:int:opt;";
     const CLIP_ERR: &'static CStr = c"AudioGraph: Failed to get clip";
     const PROP_ERR: &'static CStr = c"AudioGraph: Failed to set output property";
 
@@ -74,8 +74,9 @@ impl<T: GraphTarget> Filter for GraphFilter<T> {
     ) -> Result<(), Self::Error> {
         let node_ptr = T::get_node_ptr(&input).ok_or(T::CLIP_ERR)?;
         let pretty = input.get_int(key!(c"pretty"), 0).unwrap_or(0) != 0;
+        let reset_timing = input.get_int(key!(c"reset_timing"), 0).unwrap_or(0) != 0;
         let inspector = GraphInspector::new(core)?;
-        let json = inspector.build_graph(node_ptr, pretty)?;
+        let json = inspector.build_graph(node_ptr, pretty, reset_timing)?;
 
         output
             .set(key!(c"json"), Value::Utf8(&json), AppendMode::Replace)

@@ -329,15 +329,21 @@ class Edge:
     source: str
     target: str
     pattern: RequestPattern
+    index: int
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
-        return {"source": self.source, "target": self.target, "pattern": self.pattern}
+        return {"source": self.source, "target": self.target, "pattern": self.pattern, "index": self.index}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Construct from a dictionary."""
-        return cls(source=str(data["source"]), target=str(data["target"]), pattern=RequestPattern(data["pattern"]))
+        return cls(
+            source=str(data["source"]),
+            target=str(data["target"]),
+            pattern=RequestPattern(data["pattern"]),
+            index=int(data["index"]),
+        )
 
 
 @dataclass(slots=True, kw_only=True)
@@ -612,6 +618,7 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
                         "pattern": edge.pattern.value,
                         "pattern_name": edge.pattern.name,
                         "label": edge.pattern.name if edge.pattern != RequestPattern.GENERAL else "",
+                        "index": edge.index,
                     }
                 }
                 for i, edge in enumerate(self.edges)
