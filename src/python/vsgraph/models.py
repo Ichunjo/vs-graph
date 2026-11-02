@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass, field, fields
@@ -67,7 +68,10 @@ class VideoMediaInfo(MediaInfo):
 
     @override
     def to_dict(self) -> dict[str, Any]:
-        data = super().to_dict()
+        if sys.version_info >= (3, 13):
+            data = super().to_dict()
+        else:
+            data = super(VideoMediaInfo, self).to_dict()
         data["format"] = self.format._as_dict()
         return data
 
@@ -105,7 +109,10 @@ class AudioMediaInfo(MediaInfo):
 
     @override
     def to_dict(self) -> dict[str, Any]:
-        data = super().to_dict()
+        if sys.version_info >= (3, 13):
+            data = super().to_dict()
+        else:
+            data = super(AudioMediaInfo, self).to_dict()
         data["format"] = self.format._as_dict()
         return data
 
