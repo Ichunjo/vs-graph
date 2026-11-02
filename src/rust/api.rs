@@ -92,12 +92,12 @@ impl GraphApiFns {
         let raw = unsafe { *api_ext_base.add(graph_fns_offset).cast::<RawGraphFns>() };
 
         Ok(Self {
+            get_node_residency,
+            get_frame_residency,
             function_name: raw.function_name,
             plugin_id: raw.plugin_id,
             plugin_ns: raw.plugin_ns,
             function_arguments: raw.function_arguments,
-            get_node_residency,
-            get_frame_residency,
         })
     }
 
