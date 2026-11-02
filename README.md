@@ -1,4 +1,4 @@
-# vsgraph
+# Vapoursynth Graph
 
 VapourSynth plugin (Rust) and typed Python API for inspecting filter graphs.
 
@@ -15,7 +15,7 @@ Graphs can be exported to Mermaid, Graphviz DOT, ASCII, Cytoscape.js or JSON.
 ## Installation
 
 ```powershell
-pip install vsgraph
+pip install vapoursynth-graph
 ```
 
 The wheel ships the native `graph` plugin, which VapourSynth autoloads.
