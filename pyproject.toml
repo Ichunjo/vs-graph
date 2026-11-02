@@ -8,7 +8,7 @@ requires = [
 build-backend = "hatchling.build"
 
 [project]
-name = "vsgraph"
+name = "vapoursynth-graph"
 description = "VapourSynth filter graph inspection"
 readme = "README.md"
 authors = [{ name = "Vardë", email = "ichunjo.le.terrible@gmail.com" }]
