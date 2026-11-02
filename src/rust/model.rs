@@ -55,6 +55,7 @@ pub(crate) enum FrameInfo {
         height: i32,
         #[serde(skip_serializing_if = "Option::is_none")]
         gpu_resident: Option<bool>,
+        props: BTreeMap<String, serde_json::Value>,
     },
     #[serde(rename = "aframe")]
     Audio {
@@ -63,6 +64,7 @@ pub(crate) enum FrameInfo {
         num_samples: i32,
         #[serde(skip_serializing_if = "Option::is_none")]
         gpu_resident: Option<bool>,
+        props: BTreeMap<String, serde_json::Value>,
     },
 }
 

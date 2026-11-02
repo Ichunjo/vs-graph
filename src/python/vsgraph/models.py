@@ -124,6 +124,8 @@ class AudioMediaInfo(MediaInfo):
 
 @dataclass(slots=True, kw_only=True)
 class FrameInfo(ABC):
+    props: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary."""
         data = dict[str, Any]()
@@ -166,6 +168,7 @@ class VideoFrameInfo(FrameInfo):
             width=int(data["width"]),
             height=int(data["height"]),
             gpu_resident=data.get("gpu_resident"),
+            props=dict(data["props"]),
         )
 
 
@@ -193,6 +196,7 @@ class AudioFrameInfo(FrameInfo):
             format_id=int(data["format_id"]),
             num_samples=int(data["num_samples"]),
             gpu_resident=data.get("gpu_resident"),
+            props=dict(data["props"]),
         )
 
 

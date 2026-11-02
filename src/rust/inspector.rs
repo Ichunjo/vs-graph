@@ -376,13 +376,13 @@ impl<'a> RawMap<'a> {
             )
         };
 
-        let gpu_resident = self.graph_api.get_frame_residency(frame);
         let info = FrameInfo::Video {
             id,
             format_id,
             width,
             height,
-            gpu_resident,
+            gpu_resident: self.graph_api.get_frame_residency(frame),
+            props: self.extract_props(frame),
         };
         serde_json::to_value(info).unwrap_or(Value::Null)
     }
@@ -396,15 +396,21 @@ impl<'a> RawMap<'a> {
             (format_id, (self.api.getFrameLength)(frame))
         };
 
-        let gpu_resident = self.graph_api.get_frame_residency(frame);
-
         let arg = FrameInfo::Audio {
             id,
             format_id,
             num_samples,
-            gpu_resident,
+            gpu_resident: self.graph_api.get_frame_residency(frame),
+            props: self.extract_props(frame),
         };
         serde_json::to_value(arg).unwrap_or(Value::Null)
+    }
+
+    fn extract_props(&self, frame: *const VSFrame) -> BTreeMap<String, Value> {
+        // SAFETY: `frame` is a valid non-null pointer.
+        let props_ptr = unsafe { (self.api.getFramePropertiesRO)(frame) };
+        RawMap::from_ptr(props_ptr, self.api, self.graph_api)
+            .map_or_else(BTreeMap::new, |m| m.to_json_map())
     }
 }
 
