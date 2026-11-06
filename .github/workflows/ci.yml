@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_NO_EDITABLE: "1"
+  UV_NO_SYNC: "1"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Generate VapourSynth stubs
+        run: uv run vsstubs
+
+      - name: Check linting with Ruff
+        run: uv run ruff check
+
+      - name: Check formatting with Ruff
+        run: uv run ruff format --check
+
+      - name: Check types with ty
+        run: uv run ty check
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, windows-2025, macos-15, macos-26-intel]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests with pytest
+        run: uv run pytest
