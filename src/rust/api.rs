@@ -68,16 +68,8 @@ impl GraphApiFns {
                 // +3: getNodeResidency
                 // +4: getFrameResidency
                 // +5: getNodeCreationFunctionName
-                let node_res = unsafe {
-                    *api_ext_base
-                        .add(3)
-                        .cast::<unsafe extern "system-unwind" fn(node: *mut VSNode) -> c_int>()
-                };
-                let frame_res = unsafe {
-                    *api_ext_base
-                        .add(4)
-                        .cast::<unsafe extern "system-unwind" fn(frame: *const VSFrame) -> c_int>()
-                };
+                let node_res = unsafe { *api_ext_base.add(3).cast::<NodeFn<c_int>>() };
+                let frame_res = unsafe { *api_ext_base.add(4).cast::<FrameFn<c_int>>() };
                 (API_4_3_NEW_FNS_COUNT, Some(node_res), Some(frame_res))
             }
             _ => {
