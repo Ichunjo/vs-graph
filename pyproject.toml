@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "hatchling==1.32.4",
+    "hatchling==1.33.0",
     "hatch-rs==0.4.3",
     "packaging==26.3",
     "uv-dynamic-versioning==0.14.1",
@@ -18,7 +18,7 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-    "hatchling==1.32.4",
+    "hatchling==1.33.0",
     "packaging>=26.3",
     "pytest>=9.1.1",
     "ruff==0.17.4",
