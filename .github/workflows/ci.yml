@@ -30,7 +30,7 @@ jobs:
         run: uv sync --locked
 
       - name: Generate VapourSynth stubs
-        run: uv run vsstubs
+        run: uv run vsstubs -o stubs/vapoursynth/__init__.pyi
 
       - name: Check linting with Ruff
         run: uv run ruff check
