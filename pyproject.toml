@@ -1,7 +1,7 @@
 [build-system]
 requires = [
     "hatchling==1.32.4",
-    "hatch-rs==0.4.2",
+    "hatch-rs==0.4.3",
     "packaging==26.3",
     "uv-dynamic-versioning==0.14.1",
 ]
