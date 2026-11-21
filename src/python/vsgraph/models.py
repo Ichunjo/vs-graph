@@ -399,7 +399,7 @@ class Node[MediaInfoT: MediaInfo]:
             name=str(data["name"]),
             filter_mode=vs.FilterMode(data["filter_mode"]),
             processing_time_ns=int(data["processing_time_ns"]),
-            media_info=media_info,
+            media_info=media_info,  # ty: ignore[invalid-argument-type]
             call_stack=call_stack,
         )
 
