@@ -17,7 +17,7 @@ strip = true
 envparse = "0.1.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-vapoursynth4-rs = { version = "0.5.1", features = ["vs-graph"] }
+vapoursynth4-rs = { version = "0.6.0", features = ["vs-graph"] }
 
 [lints.rust]
 improper_ctypes = "warn"
