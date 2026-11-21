@@ -68,7 +68,7 @@ environment.extra-paths = ["stubs", "src/python"]
 rules.dynamic-function-decorator-return = "error"
 rules.missing-type-argument = "error"
 rules.possibly-unresolved-reference = "warn"
-rules.unsound-return-statement = "error"
+rules.unsound-return = "error"
 rules.missing-override-decorator = "error"
 
 [tool.cibuildwheel]
