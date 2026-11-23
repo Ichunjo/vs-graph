@@ -446,23 +446,23 @@ class Graph[MediaInfoT: (VideoMediaInfo, AudioMediaInfo)](Collection[Node[MediaI
         """Dictionary of nodes keyed by their ID."""
         return {node.id: node for node in self.nodes}
 
-    def get_incoming_edges(self, node_or_id: NodeKey) -> list[Edge]:
+    def get_incoming_edges(self, node_or_id: NodeKey | None = None) -> list[Edge]:
         """Return all edges where this node is the target (inputs to this node)."""
-        nid = to_node_id(node_or_id)
+        nid = to_node_id(node_or_id or self.root)
         return [edge for edge in self.edges if edge.target == nid]
 
-    def get_outgoing_edges(self, node_or_id: NodeKey) -> list[Edge]:
+    def get_outgoing_edges(self, node_or_id: NodeKey | None = None) -> list[Edge]:
         """Return all edges where this node is the source (outputs from this node)."""
-        nid = to_node_id(node_or_id)
+        nid = to_node_id(node_or_id or self.root)
         return [edge for edge in self.edges if edge.source == nid]
 
-    def get_dependencies(self, node_or_id: NodeKey) -> list[Node[MediaInfoT]]:
+    def get_dependencies(self, node_or_id: NodeKey | None = None) -> list[Node[MediaInfoT]]:
         """Return upstream nodes that this node directly depends on."""
         node_map = self.nodes_by_id
         incoming = self.get_incoming_edges(node_or_id)
         return [node_map[e.source] for e in incoming if e.source in node_map]
 
-    def get_dependents(self, node_or_id: NodeKey) -> list[Node[MediaInfoT]]:
+    def get_dependents(self, node_or_id: NodeKey | None = None) -> list[Node[MediaInfoT]]:
         """Return downstream nodes that directly depend on this node."""
         node_map = self.nodes_by_id
         outgoing = self.get_outgoing_edges(node_or_id)

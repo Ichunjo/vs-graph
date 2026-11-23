@@ -11,19 +11,19 @@ def test_graph_traversal(diamond_video_dag: vs.VideoNode) -> None:
     splice_node = graph.root
 
     # Test accepting either Node or str ID
-    incoming_by_node = graph.get_incoming_edges(splice_node)
+    incoming_by_node = graph.get_incoming_edges()
     incoming_by_id = graph.get_incoming_edges(splice_node.id)
     assert incoming_by_node == incoming_by_id
 
-    outgoing_by_node = graph.get_outgoing_edges(splice_node)
+    outgoing_by_node = graph.get_outgoing_edges()
     outgoing_by_id = graph.get_outgoing_edges(splice_node.id)
     assert outgoing_by_node == outgoing_by_id
 
-    deps_by_node = graph.get_dependencies(splice_node)
+    deps_by_node = graph.get_dependencies()
     deps_by_id = graph.get_dependencies(splice_node.id)
     assert deps_by_node == deps_by_id
 
-    dependents_by_node = graph.get_dependents(splice_node)
+    dependents_by_node = graph.get_dependents()
     dependents_by_id = graph.get_dependents(splice_node.id)
     assert dependents_by_node == dependents_by_id
 

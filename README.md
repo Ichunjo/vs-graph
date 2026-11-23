@@ -37,7 +37,7 @@ graph = get_graph(clip)
 print(graph.root.name, graph.root.media_info.fps)
 print(graph.to_ascii())
 
-for node in graph.get_dependencies(graph.root):
+for node in graph.get_dependencies():
     print(node.name, node.filter_mode, f"{node.processing_time_ms:.2f} ms")
 ```
 

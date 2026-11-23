@@ -78,15 +78,14 @@ def test_branching_video_dag(diamond_video_dag: vs.VideoNode) -> None:
     graph = get_graph(diamond_video_dag)
 
     assert graph.root.name == "Splice"
-    splice_node = graph.root
 
     # Splice has two inputs: video_pipeline and invert
-    dependencies = graph.get_dependencies(splice_node)
+    dependencies = graph.get_dependencies()
     dep_names = {node.name for node in dependencies}
     assert "Bicubic" in dep_names
     assert "Invert" in dep_names
 
-    incoming = graph.get_incoming_edges(splice_node)
+    incoming = graph.get_incoming_edges()
     assert len(incoming) == 2
     assert {e.index for e in incoming} == {0, 1}
 
@@ -138,12 +137,12 @@ def test_audio_pipeline(blank_audio: vs.AudioNode) -> None:
     assert root_ainfo.num_samples == 88200
 
     # AudioSplice has 2 inputs from BlankAudio
-    deps = graph.get_dependencies(graph.root)
+    deps = graph.get_dependencies()
     assert len(deps) == 2
     assert {n.name for n in deps} == {"BlankAudio"}
     assert deps[0].id == deps[1].id
 
-    incoming = graph.get_incoming_edges(graph.root)
+    incoming = graph.get_incoming_edges()
     assert len(incoming) == 2
     assert all(e.source == deps[0].id for e in incoming)
     assert incoming[0].index == 0
