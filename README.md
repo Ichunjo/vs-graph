@@ -9,7 +9,7 @@ Graphs can be exported to Mermaid, Graphviz DOT, ASCII, Cytoscape.js or JSON.
 ## Requirements
 
 - Python ≥ 3.12
-- VapourSynth ≥ R79 (API 4.2 or 4.3)
+- VapourSynth ≥ R80 (API 4.3)
 - The core must be created with `vs.CoreCreationFlags.ENABLE_GRAPH_INSPECTION`
 
 ## Installation

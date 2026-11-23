@@ -1,121 +1,36 @@
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, c_int};
 
 use vapoursynth4_rs::{
-    core::CoreRef,
-    ffi::{
-        VSAudioFormat,
-        VSColorFamily,
-        VSCoreCreationFlags,
-        VSFrame,
-        VSMap,
-        VSNode,
-        VSVideoFormat,
-        vs_make_version,
-    },
+    VAPOURSYNTH_API_VERSION,
+    core::CoreHandle,
+    ffi::{VSAudioFormat, VSColorFamily, VSCoreCreationFlags, VSVideoFormat, vs_make_version},
 };
 
-#[rustfmt::skip]
-type NodeLevelFn<R = *const c_char> = unsafe extern "system-unwind" fn(node: *mut VSNode, level: c_int) -> R;
-type NodeFn<R> = unsafe extern "system-unwind" fn(node: *mut VSNode) -> R;
-type FrameFn<R> = unsafe extern "system-unwind" fn(frame: *const VSFrame) -> R;
+// The graph inspection functions are experimental and sit at the end of `VSAPI`.
+// When a new API minor version adds functions, they are inserted before the graph block,
+const _: () = assert!(
+    VAPOURSYNTH_API_VERSION == vs_make_version(4, 3),
+    "graph inspection layout was only checked against VapourSynth API 4.3"
+);
 
-const API_4_2: c_int = vs_make_version(4, 2);
-const API_4_3: c_int = vs_make_version(4, 3);
-const API_4_3_NEW_FNS_COUNT: usize = 5;
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct RawGraphFns {
-    function_name: NodeLevelFn,
-    plugin_id: NodeLevelFn,
-    plugin_ns: NodeLevelFn,
-    function_arguments: NodeLevelFn<*const VSMap>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct GraphApiFns {
-    get_node_residency: Option<NodeFn<c_int>>,
-    get_frame_residency: Option<FrameFn<c_int>>,
-    function_name: NodeLevelFn,
-    plugin_id: NodeLevelFn,
-    plugin_ns: NodeLevelFn,
-    function_arguments: NodeLevelFn<*const VSMap>,
-}
-
-impl GraphApiFns {
-    /// Resolves the experimental graph inspection function pointers from the core's API table.
-    pub(crate) fn resolve(core: CoreRef<'_>) -> Result<Self, &'static CStr> {
-        let info = core.get_info2();
-        let is_inspection_enabled =
-            (info.creation_flags & (VSCoreCreationFlags::EnableGraphInspection as c_int)) != 0;
-        if !is_inspection_enabled {
-            return Err(c"Graph: EnableGraphInspection is not enabled on this core");
-        }
-
-        let api = core.api();
-        let runtime_api = unsafe { (api.getAPIVersion)() };
-
-        // Anchor right after getCoreInfo2, the last common function between API 4.2 and 4.3 in vapoursynth4-sys
-        let api_ext_base = unsafe { (&raw const api.getCoreInfo2).cast::<*const ()>().add(1) };
-
-        let (graph_fns_offset, get_node_residency, get_frame_residency) = match runtime_api {
-            API_4_2 => (0, None, None),
-            API_4_3 => {
-                // Offsets after getCoreInfo2 in VapourSynth4.h:
-                // +0: createVideoFilterEx
-                // +1: createVideoFilterEx2
-                // +2: getVulkanAPI
-                // +3: getNodeResidency
-                // +4: getFrameResidency
-                // +5: getNodeCreationFunctionName
-                let node_res = unsafe { *api_ext_base.add(3).cast::<NodeFn<c_int>>() };
-                let frame_res = unsafe { *api_ext_base.add(4).cast::<FrameFn<c_int>>() };
-                (API_4_3_NEW_FNS_COUNT, Some(node_res), Some(frame_res))
-            }
-            _ => {
-                return Err(
-                    c"Graph: Unsupported VapourSynth API version for graph inspection (requires API 4.2 or 4.3)",
-                );
-            }
-        };
-
-        // SAFETY: When EnableGraphInspection is enabled, the function table extension is guaranteed
-        // to be present at the layout offset matching the runtime API version.
-        let raw = unsafe { *api_ext_base.add(graph_fns_offset).cast::<RawGraphFns>() };
-
-        Ok(Self {
-            get_node_residency,
-            get_frame_residency,
-            function_name: raw.function_name,
-            plugin_id: raw.plugin_id,
-            plugin_ns: raw.plugin_ns,
-            function_arguments: raw.function_arguments,
-        })
+/// Checks that the graph inspection functions in the core's `VSAPI` table can be used.
+pub(crate) fn ensure_graph_support(core: &CoreHandle) -> Result<(), &'static CStr> {
+    let info = core.get_info2();
+    let is_inspection_enabled =
+        (info.creation_flags & (VSCoreCreationFlags::EnableGraphInspection as c_int)) != 0;
+    if !is_inspection_enabled {
+        return Err(c"Graph: EnableGraphInspection is not enabled on this core");
     }
 
-    pub(crate) fn function_name(&self, node: *mut VSNode, level: i32) -> *const c_char {
-        unsafe { (self.function_name)(node, level) }
+    // SAFETY: `getAPIVersion` is part of the base API and is always present.
+    let runtime_api = unsafe { (core.api().getAPIVersion)() };
+    if runtime_api != VAPOURSYNTH_API_VERSION {
+        return Err(
+            c"Graph: Unsupported VapourSynth API version for graph inspection (requires API 4.3)",
+        );
     }
 
-    pub(crate) fn plugin_id(&self, node: *mut VSNode, level: i32) -> *const c_char {
-        unsafe { (self.plugin_id)(node, level) }
-    }
-
-    pub(crate) fn plugin_ns(&self, node: *mut VSNode, level: i32) -> *const c_char {
-        unsafe { (self.plugin_ns)(node, level) }
-    }
-
-    pub(crate) fn function_arguments(&self, node: *mut VSNode, level: i32) -> *const VSMap {
-        unsafe { (self.function_arguments)(node, level) }
-    }
-
-    pub(crate) fn get_node_residency(&self, node: *mut VSNode) -> Option<bool> {
-        self.get_node_residency.map(|f| unsafe { f(node) == 1 })
-    }
-
-    pub(crate) fn get_frame_residency(&self, frame: *const VSFrame) -> Option<bool> {
-        self.get_frame_residency.map(|f| unsafe { f(frame) == 1 })
-    }
+    Ok(())
 }
 
 #[inline]
