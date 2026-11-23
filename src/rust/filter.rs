@@ -9,13 +9,13 @@ use vapoursynth4_rs::{
     ffi::VSNode,
     frame::{AudioFrame, Frame, FrameContext, VideoFrame},
     key,
-    map::{AppendMode, MapRef, Value},
+    map::{AppendMode, MapMut, MapRef, Value},
     node::{ActivationReason, Filter, Node},
 };
 
 use crate::inspector::GraphInspector;
 
-pub(crate) trait GraphTarget: RefUnwindSafe {
+pub(crate) trait GraphTarget: Send + Sync + RefUnwindSafe + 'static {
     type FrameType: Frame;
     const NAME: &'static CStr;
     const ARGS: &'static CStr;
@@ -68,14 +68,14 @@ impl<T: GraphTarget> Filter for GraphFilter<T> {
 
     fn create(
         input: MapRef<'_>,
-        mut output: MapRef<'_>,
-        _data: Option<Box<Self::FilterData>>,
+        mut output: MapMut<'_>,
+        _data: Option<&Self::FilterData>,
         core: CoreRef<'_>,
     ) -> Result<(), Self::Error> {
         let node_ptr = T::get_node_ptr(&input).ok_or(T::CLIP_ERR)?;
         let pretty = input.get_int(key!(c"pretty"), 0).unwrap_or(0) != 0;
         let reset_timing = input.get_int(key!(c"reset_timing"), 0).unwrap_or(0) != 0;
-        let inspector = GraphInspector::new(core)?;
+        let inspector = GraphInspector::new(&core)?;
         let json = inspector.build_graph(node_ptr, pretty, reset_timing)?;
 
         output

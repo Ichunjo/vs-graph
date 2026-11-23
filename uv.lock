@@ -335,7 +335,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "vapoursynth", specifier = ">=79" }]
+requires-dist = [{ name = "vapoursynth", specifier = ">=80" }]
 
 [package.metadata.requires-dev]
 dev = [

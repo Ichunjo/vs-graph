@@ -7,7 +7,7 @@ use std::{
 use serde_json::{Number, Value};
 use vapoursynth4_rs::{
     api::Api,
-    core::CoreRef,
+    core::CoreHandle,
     ffi::{
         VSCore,
         VSDataTypeHint,
@@ -16,27 +16,26 @@ use vapoursynth4_rs::{
         VSMapPropertyError,
         VSMediaType,
         VSNode,
+        VSNodeResidency,
         VSPropertyType,
     },
 };
 
 use crate::{
-    api::{GraphApiFns, get_audio_format_id, get_video_format_id},
+    api::{ensure_graph_support, get_audio_format_id, get_video_format_id},
     model::{CallFrame, EdgeEntry, FrameInfo, FuncRef, GraphOutput, MediaInfo, NodeEntry, NodeRef},
 };
 
 pub(crate) struct GraphInspector {
     api: Api,
-    graph_api: GraphApiFns,
     core_ptr: *mut VSCore,
 }
 
 impl GraphInspector {
-    pub(crate) fn new(core: CoreRef<'_>) -> Result<Self, &'static CStr> {
-        let graph_api = GraphApiFns::resolve(core)?;
+    pub(crate) fn new(core: &CoreHandle) -> Result<Self, &'static CStr> {
+        ensure_graph_support(core)?;
         Ok(Self {
             api: core.api(),
-            graph_api,
             core_ptr: core.as_ptr(),
         })
     }
@@ -134,7 +133,7 @@ impl GraphInspector {
                         fps_num: vi.fps_num,
                         fps_den: vi.fps_den,
                         num_frames: vi.num_frames,
-                        gpu_resident: self.graph_api.get_node_residency(node),
+                        gpu_resident: Some(is_gpu((self.api.getNodeResidency)(node))),
                     }
                 }
                 VSMediaType::Audio => {
@@ -144,7 +143,7 @@ impl GraphInspector {
                         sample_rate: ai.sample_rate,
                         num_samples: ai.num_samples,
                         num_frames: ai.num_frames,
-                        gpu_resident: self.graph_api.get_node_residency(node),
+                        gpu_resident: Some(is_gpu((self.api.getNodeResidency)(node))),
                     }
                 }
             }
@@ -155,15 +154,16 @@ impl GraphInspector {
     fn extract_call_stack(&self, node: *mut VSNode) -> Vec<CallFrame> {
         let mut stack = Vec::new();
         for level in 0..c_int::MAX {
-            // SAFETY: caller guarantees `node` is valid.
-            let Some((args_ptr, plugin_id, plugin_ns, function)) = ({
-                let args = self.graph_api.function_arguments(node, level);
+            // SAFETY: caller guarantees `node` is valid,
+            // and `ensure_graph_support` checked that the graph inspection functions exist in this `VSAPI` table.
+            let Some((args_ptr, plugin_id, plugin_ns, function)) = (unsafe {
+                let args = (self.api.getNodeCreationFunctionArguments)(node, level);
                 (!args.is_null()).then(|| {
                     (
                         args,
-                        cstr_to_string(self.graph_api.plugin_id(node, level)),
-                        cstr_to_string(self.graph_api.plugin_ns(node, level)),
-                        cstr_to_string(self.graph_api.function_name(node, level)),
+                        cstr_to_string((self.api.getNodeCreationPluginID)(node, level)),
+                        cstr_to_string((self.api.getNodeCreationPluginNS)(node, level)),
+                        cstr_to_string((self.api.getNodeCreationFunctionName)(node, level)),
                     )
                 })
             }) else {
@@ -185,7 +185,7 @@ impl GraphInspector {
 
     /// Serializes a `VapourSynth` map to a JSON key-value object.
     fn serialize_vsmap(&self, map: *const VSMap) -> BTreeMap<String, Value> {
-        let Some(raw_map) = RawMap::from_ptr(map, &self.api, &self.graph_api) else {
+        let Some(raw_map) = RawMap::from_ptr(map, &self.api) else {
             return BTreeMap::new();
         };
         raw_map.to_json_map()
@@ -195,16 +195,11 @@ impl GraphInspector {
 struct RawMap<'a> {
     ptr: *const VSMap,
     api: &'a Api,
-    graph_api: &'a GraphApiFns,
 }
 
 impl<'a> RawMap<'a> {
-    fn from_ptr(ptr: *const VSMap, api: &'a Api, graph_api: &'a GraphApiFns) -> Option<Self> {
-        (!ptr.is_null()).then_some(Self {
-            ptr,
-            api,
-            graph_api,
-        })
+    fn from_ptr(ptr: *const VSMap, api: &'a Api) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self { ptr, api })
     }
 
     fn to_json_map(&self) -> BTreeMap<String, Value> {
@@ -394,7 +389,7 @@ impl<'a> RawMap<'a> {
             format_id,
             width,
             height,
-            gpu_resident: self.graph_api.get_frame_residency(frame),
+            gpu_resident: Some(self.is_frame_on_gpu(frame)),
             props: self.extract_props(frame),
         };
         serde_json::to_value(info).unwrap_or(Value::Null)
@@ -413,7 +408,7 @@ impl<'a> RawMap<'a> {
             id,
             format_id,
             num_samples,
-            gpu_resident: self.graph_api.get_frame_residency(frame),
+            gpu_resident: Some(self.is_frame_on_gpu(frame)),
             props: self.extract_props(frame),
         };
         serde_json::to_value(arg).unwrap_or(Value::Null)
@@ -422,9 +417,17 @@ impl<'a> RawMap<'a> {
     fn extract_props(&self, frame: *const VSFrame) -> BTreeMap<String, Value> {
         // SAFETY: `frame` is a valid non-null pointer.
         let props_ptr = unsafe { (self.api.getFramePropertiesRO)(frame) };
-        RawMap::from_ptr(props_ptr, self.api, self.graph_api)
-            .map_or_else(BTreeMap::new, |m| m.to_json_map())
+        RawMap::from_ptr(props_ptr, self.api).map_or_else(BTreeMap::new, |m| m.to_json_map())
     }
+
+    fn is_frame_on_gpu(&self, frame: *const VSFrame) -> bool {
+        // SAFETY: `frame` is a valid non-null pointer.
+        is_gpu(unsafe { (self.api.getFrameResidency)(frame) })
+    }
+}
+
+fn is_gpu(residency: VSNodeResidency) -> bool {
+    matches!(residency, VSNodeResidency::GPU)
 }
 
 fn ptr_id<T>(ptr: *const T) -> String {
